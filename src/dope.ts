@@ -65,7 +65,7 @@ export function target(element: AugmentedElement): Target {
     const e = element;
     return {
         render(action) {
-            e[contentKey] ||= new ElementContent();
+            e[contentKey] = e[contentKey] || new ElementContent();
             const place: CurrentPlace<Placement.Element> = {
                 document: e.ownerDocument,
                 placement: Placement.Element,
@@ -78,7 +78,7 @@ export function target(element: AugmentedElement): Target {
                     if (fragment) e.appendChild(content.move());
                 }
             };
-            e[placeKey] ||= place;
+            e[placeKey] = e[placeKey] || place;
             renderInPlace(place, action);
         },
         clear() {
@@ -244,7 +244,7 @@ class ArrayContent extends ElementContent {
         let index = 0;
         for (const action of actions) {
             let _key: string;
-            const getKey = () => _key ||= (key() != null)
+            const getKey = () => _key = _key || (key() != null)
                 ? 'key-' + key()
                 : 'index-' + index++;
 
