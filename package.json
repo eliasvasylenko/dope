@@ -1,11 +1,15 @@
 {
   "name": "@strangeskies/dope",
-  "version": "0.0.1",
+  "version": "0.0.0",
   "description": "An extremely lightweight component templating library which uses the platform. Targeted updates with no virtual DOM and no diffs.",
-  "main": "dope.js",
+  "main": "dist/dope.js",
+  "types": "dist/dope.d.ts",
   "type": "module",
   "scripts": {
-    "test": "mocha"
+    "lint": "eslint . --ext .ts",
+    "build": "tsc --build src",
+    "test": "tsc --build test && node tmp/tests.js",
+    "start": "tsc --build src && node dist/dope.js"
   },
   "repository": {
     "type": "git",
@@ -24,7 +28,13 @@
   },
   "homepage": "https://github.com/StrangeSkies/dope#readme",
   "devDependencies": {
-    "jsdom": "^16.7.0",
-    "mocha": "^9.0.3"
+    "@types/node": "^16.6.2",
+    "@typescript-eslint/eslint-plugin": "^4.31.2",
+    "@typescript-eslint/parser": "^4.31.2",
+    "eslint": "^7.32.0",
+    "typescript": "^4.3.5",
+    "@strangeskies/ducktest": "^0.0.4",
+    "@types/jsdom": "^16.2.13",
+    "jsdom": "^17.0.0"
   }
 }
