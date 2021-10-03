@@ -4,7 +4,7 @@ with pkgs;
 with vscode-extensions;
 with vscode-utils;
 stdenv.mkDerivation {
-  name = "regolith-env";
+  name = "dope-env";
   buildInputs = [
     cmake
     (vscode-with-extensions.override {

@@ -1,0 +1,7 @@
+src
+test
+tmp
+tsconfig-base.json
+eslint.json
+.envrc
+default.nix
