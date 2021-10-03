@@ -269,7 +269,7 @@ function makeHTMLAction(templateStrings: TemplateStringsArray, values: unknown[]
 
     let template: Slotted<HTMLTemplateElement> | undefined;
     return () => {
-        template ||= templateCache(place().document)(t);
+        template = template || templateCache(place().document)(t);
 
         const content = place().priorContent;
         if ((content instanceof HTMLContent)
