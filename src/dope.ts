@@ -244,9 +244,9 @@ class ArrayContent extends ElementContent {
         let index = 0;
         for (const action of actions) {
             let _key: string;
-            const getKey = () => _key = _key || (key() != null)
+            const getKey = () => _key = _key || ((key() != null)
                 ? 'key-' + key()
-                : 'index-' + index++;
+                : 'index-' + index++);
 
             const priorContent = () =>
                 this.#contentsByKey[getKey()] || undefined;
