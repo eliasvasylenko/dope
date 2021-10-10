@@ -18,22 +18,14 @@ export function html(templateStrings: TemplateStringsArray, ...values: unknown[]
 
 interface SlotInfo {
     regexp: RegExp;
-    names: string[];
-    indices: Record<string, number>;
+    name(index: number): string;
 }
 
 const slotsKey = Symbol('slots');
-const elementsKey = Symbol('element-wires');
-const attributesKey = Symbol('attribute-wires');
 type Slotted<T> = T & {
-    [slotsKey]: SlotInfo;
-    [elementsKey]: {
-        query: string;
-        variableIndex: number;
-    }[];
-    [attributesKey]: {
-        query: string;
-        updateVariables: (element: Element) => (values: unknown[]) => void;
+    [slotsKey]: {
+        elementQuery: string;
+        elementUpdate: (element: Element) => (values: unknown[]) => void;
     }[];
 };
 
@@ -52,18 +44,13 @@ const templateCache =
 function composeTemplate(document: Document, templateStrings: TemplateStringsArray) {
     const slotInfo = nameSlots(templateStrings);
 
-    let templateString = templateStrings[0];
     let i = 0;
-    for (const string of templateStrings.slice(1)) {
-        templateString += slotInfo.names[i++] + string;
-    }
+    const templateHTML = join(templateStrings, () => slotInfo.name(i++));
 
     const template = document.createElement('template') as Slotted<HTMLTemplateElement>;
-    template.innerHTML = templateString;
-    template[slotsKey] = slotInfo;
-    template[elementsKey] = [];
-    template[attributesKey] = [];
-    wireSlots(template);
+    template.innerHTML = templateHTML;
+    template[slotsKey] = [];
+    wireSlots(template, slotInfo);
 
     return template;
 }
@@ -77,22 +64,16 @@ function nameSlots(templateStrings: TemplateStringsArray) {
     const prefix = '{' + templateStrings
         .flatMap(string => string.match(/{*/g) ?? '') // TODO make aware of &; encoding of '{'
         .reduce((a, b) => (a.length > b.length) ? a : b, '');
-    const count = templateStrings.length - 1;
 
     const slotInfo: SlotInfo = {
         regexp: RegExp(prefix + '([0-9]*)' + postfix, 'm'),
-        names: [],
-        indices: {}
+        name: (index: number) => prefix + index + postfix
     };
-    for (let i = slotInfo.names.length; i < count; i++) {
-        const name = prefix + i + postfix;
-        slotInfo.names.push(name);
-        slotInfo.indices[name] = i;
-    }
+
     return slotInfo;
 }
 
-function wireSlots(template: Slotted<HTMLTemplateElement>) {
+function wireSlots(template: Slotted<HTMLTemplateElement>, slots: SlotInfo) {
     const view = global.window || template?.ownerDocument?.defaultView;
 
     const nodes = template.ownerDocument.createNodeIterator(template.content, view.NodeFilter.SHOW_ALL);
@@ -100,7 +81,7 @@ function wireSlots(template: Slotted<HTMLTemplateElement>) {
     let node;
     while ((node = nodes.nextNode())) {
         if (node instanceof view.Text && node.nodeValue) {
-            const { firstSlot, strings } = findStringSlots(template[slotsKey], node.nodeValue);
+            const { firstSlot, strings } = findStringSlots(slots, node.nodeValue);
             if (firstSlot < 0)
                 continue;
 
@@ -113,9 +94,26 @@ function wireSlots(template: Slotted<HTMLTemplateElement>) {
                 slot.name = variableIndex.toString();
                 fragment.append(slot, s);
 
-                template[elementsKey].push({
-                    query: `slot[name="${variableIndex}"]`,
-                    variableIndex
+                template[slotsKey].push({
+                    elementQuery: `slot[name="${variableIndex}"]`,
+                    elementUpdate: (element: Element) => {
+                        const marker = template.ownerDocument.createComment(`slot-${variableIndex}`) as Containing<Comment>;
+                        element.replaceWith(marker);
+
+                        marker[contentKey] = new ElementContent();
+
+                        return (values: unknown[]) => render(
+                            Placement.Element,
+                            values[variableIndex],
+                            () => marker[contentKey],
+                            content => {
+                                if (content === marker[contentKey])
+                                    return;
+                                marker[contentKey].move();
+                                marker[contentKey] = content;
+                                marker.parentNode?.insertBefore(marker[contentKey].move(), marker.nextSibling);
+                            });
+                    }
                 });
             }
 
@@ -135,34 +133,39 @@ function wireSlots(template: Slotted<HTMLTemplateElement>) {
                 continue;
 
             const attributeName = attribute.name;
-            const matchIndex = template[slotsKey].indices[attributeName];
-            if (matchIndex != null) {
-                // TODO
-            } else
-                console.assert(!template[slotsKey].regexp.exec(attributeName), 'partial expression in attribute position is illegal');
+            const match = slots.regexp.exec(attributeName);
+            if (match) {
+                console.assert(match[0] === match[1], 'partial expression in attribute position is illegal');
+                // TODO slot in TAG position
+            }
 
-            const { firstSlot, strings } = findStringSlots(template[slotsKey], attribute.value);
+            const { firstSlot, strings } = findStringSlots(slots, attribute.value);
             if (firstSlot < 0)
                 continue;
 
-            const stringsHead = strings[0];
-            const stringsTail = Object.freeze(strings.slice(1));
-            template[attributesKey].push({
-                query: `[${attributeName}="${attribute.value}"]`,
-                updateVariables: (element: Element) => {
+            template[slotsKey].push({
+                elementQuery: `[${attributeName}="${attribute.value}"]`,
+                elementUpdate: (element: Element) => {
                     const e = element;
                     return (values: unknown[]) => {
-                        let a = stringsHead;
                         let s = firstSlot;
-                        for (const string of stringsTail) {
-                            a += values[s++] + string;
-                        }
+                        const a = join(strings, () => values[s++]);
                         e.setAttribute(attributeName, a);
                     };
                 }
             });
         }
     }
+}
+
+function join<T>(strings: ReadonlyArray<string>, values: () => T) {
+    const length = strings.length - 1;
+    let string = '';
+    for (let i = 0; i < length; i++) {
+        string += strings[i] + values();
+    }
+    string += strings[length];
+    return string;
 }
 
 function findStringSlots(slotInfo: SlotInfo, string: string) {
@@ -181,7 +184,7 @@ function findStringSlots(slotInfo: SlotInfo, string: string) {
         strings.push(string.slice(fromIndex, index));
 
         fromIndex = index + name.length;
-        name = slotInfo.names[++slot];
+        name = slotInfo.name(++slot);
         index = string.indexOf(name, fromIndex);
     } while (index >= 0);
     strings.push(string.slice(fromIndex));
@@ -198,7 +201,6 @@ class HTMLContent extends ElementContent {
     template: HTMLTemplateElement;
     #beginMarker: Comment;
     #endMarker: Comment;
-    #slotMarkers: Comment[];
     #patches: ((action: unknown[]) => void)[];
 
     constructor(template: Slotted<HTMLTemplateElement>, values: unknown[]) {
@@ -214,35 +216,11 @@ class HTMLContent extends ElementContent {
             template.content.cloneNode(true),
             this.#endMarker);
 
-        this.#slotMarkers = []
-        const patchSlots = template[elementsKey].map(wire => {
-            const slot = fragment.querySelector(wire.query);
-            const marker = template.ownerDocument.createComment(`slot-${wire.variableIndex}`) as Containing<Comment>;
-            slot?.replaceWith(marker);
-            this.#slotMarkers.push(marker);
-
-            marker[contentKey] = new ElementContent();
-
-            return (values: unknown[]) => render(
-                Placement.Element,
-                values[wire.variableIndex],
-                () => marker[contentKey],
-                content => {
-                    if (content === marker[contentKey])
-                        return;
-                    marker[contentKey].move();
-                    marker[contentKey] = content;
-                    marker.parentNode?.insertBefore(marker[contentKey].move(), marker.nextSibling);
-                });
-        });
-
-        const patchAttributes = template[attributesKey].map(wire => {
-            const element = fragment.querySelector(wire.query);
+        this.#patches = template[slotsKey].map(wire => {
+            const element = fragment.querySelector(wire.elementQuery);
             if (!element) throw ''; // TODO
-            return wire.updateVariables(element);
+            return wire.elementUpdate(element);
         });
-
-        this.#patches = patchSlots.concat(patchAttributes);
 
         this.patch(values);
     }
